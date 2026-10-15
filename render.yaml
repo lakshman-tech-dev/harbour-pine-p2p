@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: harbour-pine-p2p
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/kpis
+    envVars:
+      - key: NODE_VERSION
+        value: 22.14.0
+      - key: GEMINI_API_KEY
+        sync: false
