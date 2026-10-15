@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#1D2D3E" />
+  <title>Harbour &amp; Pine | Invoice Exceptions</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            shell: "#1D2D3E",
+            primary: "#0A6ED1",
+            success: "#107E3E",
+            warning: "#C25B00",
+            critical: "#BB0000",
+            canvas: "#F2F4F6"
+          },
+          fontFamily: {
+            sans: ["Inter", "Segoe UI", "Arial", "sans-serif"]
+          },
+          boxShadow: {
+            card: "0 2px 9px rgba(29,45,62,.06)",
+            panel: "-14px 0 40px rgba(16,31,47,.16)"
+          }
+        }
+      }
+    };
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    body { font-family: "DM Sans", "Segoe UI", sans-serif; }
+    h1, h2, h3, .display-font { font-family: "Manrope", "Segoe UI", sans-serif; }
+    * { scrollbar-color: #cbd5e1 transparent; scrollbar-width: thin; }
+    .drawer-enter { animation: slideIn .22s ease-out; }
+    @keyframes slideIn { from { transform: translateX(18px); opacity: .75; } to { transform: translateX(0); opacity: 1; } }
+    .spinner { border: 2px solid #dbeafe; border-top-color: #0A6ED1; animation: spin .75s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .table-row:hover { background: #f8fafc; }
+  </style>
+</head>
+<body class="bg-canvas text-slate-800 antialiased">
+  <div id="root"></div>
+
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script type="text/babel">
+    const { useCallback, useEffect, useMemo, useState } = React;
+
+    const TYPES = [
+      "PriceMismatch", "QuantityVariance", "MissingGR",
+      "DuplicateInvoice", "MasterDataError", "ApprovalTimeout"
+    ];
+
+    const typeNames = {
+      PriceMismatch: "Price mismatch",
+      QuantityVariance: "Quantity variance",
+      MissingGR: "Missing goods receipt",
+      DuplicateInvoice: "Duplicate invoice",
+      MasterDataError: "Master data error",
+      ApprovalTimeout: "Approval timeout"
+    };
+
+    const statusNames = {
+      Open: "Open",
+      InReview: "In review",
+      Escalated: "Escalated",
+      Resolved: "Resolved"
+    };
+
+    const icons = {
+      stack: <><rect x="3" y="4" width="18" height="5" rx="1.5"/><rect x="3" y="11" width="18" height="9" rx="1.5"/><path d="M7 15h5"/></>,
+      pound: <><path d="M18 5a5 5 0 0 0-9.7 1.8c0 2.5 1.7 3.2 1.7 5.2 0 1.2-.5 2.2-1.7 3.5H18"/><path d="M7 12h7"/></>,
+      clock: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></>,
+      target: <><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></>,
+      shield: <><path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z"/><path d="m9 12 2 2 4-4"/></>,
+      repeat: <><path d="m17 2 4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15"/><path d="m7 22-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/></>,
+      search: <><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></>,
+      chevron: <path d="m9 18 6-6-6-6"/>,
+      close: <><path d="m18 6-12 12M6 6l12 12"/></>,
+      check: <><path d="m5 12 4 4L19 6"/></>,
+      alert: <><path d="M10.3 3.9 2.5 18a2 2 0 0 0 1.7 3h15.6a2 2 0 0 0 1.7-3l-7.8-14.1a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4m0 4h.01"/></>,
+      spark: <><path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3Z"/><path d="m19 14 1.1 2.9L23 18l-2.9 1.1L19 22l-1.1-2.9L15 18l2.9-1.1L19 14Z"/></>,
+      document: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8m-8 4h8"/></>,
+      package: <><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 8 9 5 9-5m-18 0v9l9 5 9-5V8m-9 5v9"/></>,
+      arrow: <><path d="M7 17 17 7M7 7h10v10"/></>
+    };
+
+    function Icon({ name, size = 18, className = "" }) {
+      return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">{icons[name]}</svg>;
+    }
+
+    function money(value, compact = false) {
+      return new Intl.NumberFormat("en-GB", {
+        style: "currency", currency: "GBP",
+        maximumFractionDigits: compact ? 0 : 2,
+        minimumFractionDigits: compact ? 0 : 2
+      }).format(value || 0);
+    }
+
+    function dateLabel(value) {
+      if (!value) return "—";
+      return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`));
+    }
+
+    function riskStyle(band) {
+      if (band === "Critical") return "bg-red-50 text-critical ring-red-200";
+      if (band === "High") return "bg-orange-50 text-warning ring-orange-200";
+      if (band === "Medium") return "bg-amber-50 text-amber-700 ring-amber-200";
+      return "bg-emerald-50 text-success ring-emerald-200";
+    }
+
+    function statusStyle(status) {
+      if (status === "Resolved") return "bg-emerald-50 text-success";
+      if (status === "Escalated") return "bg-red-50 text-critical";
+      if (status === "InReview") return "bg-blue-50 text-primary";
+      return "bg-slate-100 text-slate-600";
+    }
+
+    function RiskPill({ record, large = false }) {
+      return <span className={`inline-flex items-center gap-1.5 rounded-full font-semibold ring-1 ring-inset ${large ? "px-3 py-1.5 text-xs" : "px-2.5 py-1 text-[11px]"} ${riskStyle(record.risk_band)}`}>
+        <span className={`h-1.5 w-1.5 rounded-full ${record.risk_band === "Critical" ? "bg-critical" : record.risk_band === "High" ? "bg-warning" : record.risk_band === "Medium" ? "bg-amber-500" : "bg-success"}`} />
+        {record.risk_band} <span className="opacity-70">{record.risk_score}</span>
+      </span>;
+    }
+
+    function KpiCard({ label, value, detail, icon, tone = "blue" }) {
+      const tones = {
+        blue: "bg-blue-50 text-primary",
+        green: "bg-emerald-50 text-success",
+        orange: "bg-orange-50 text-warning",
+        red: "bg-red-50 text-critical",
+        slate: "bg-slate-100 text-slate-600",
+        teal: "bg-teal-50 text-teal-700"
+      };
+      return <div className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-card">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[.09em] text-slate-500">{label}</p>
+            <p className="display-font mt-2 text-[25px] font-bold leading-none tracking-tight text-slate-800">{value}</p>
+          </div>
+          <span className={`flex h-9 w-9 items-center justify-center rounded-lg ${tones[tone]}`}><Icon name={icon} size={18} /></span>
+        </div>
+        {detail && <p className="mt-3 text-[11px] text-slate-500">{detail}</p>}
+      </div>;
+    }
+
+    function Timeline({ record }) {
+      const milestones = [
+        { title: "PO created", date: "Purchase order in SAP", state: "done", icon: "document" },
+        { title: "Goods receipt", date: record.exception_type === "MissingGR" ? "Receipt not found in SAP" : "Receipt matched", state: record.exception_type === "MissingGR" ? "pending" : "done", icon: "package" },
+        { title: "Invoice received", date: `Received ${dateLabel(record.invoice_date)}`, state: "done", icon: "document" },
+        { title: "Exception flagged", date: typeNames[record.exception_type], state: "exception", icon: "alert" }
+      ];
+      return <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-sm font-bold text-slate-800">Document timeline</h3>
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">SAP MM / FI</span>
+        </div>
+        <div className="grid grid-cols-4 gap-1">
+          {milestones.map((step, index) => <div key={step.title} className="relative">
+            {index < milestones.length - 1 && <span className={`absolute left-[calc(50%+14px)] right-[-8px] top-[13px] h-px ${step.state === "done" ? "bg-emerald-300" : "bg-slate-200"}`} />}
+            <div className="relative flex flex-col items-center text-center">
+              <span className={`flex h-7 w-7 items-center justify-center rounded-full ring-4 ring-white ${step.state === "done" ? "bg-emerald-100 text-success" : step.state === "exception" ? "bg-amber-100 text-warning" : "bg-slate-100 text-slate-400"}`}>
+                {step.state === "done" ? <Icon name="check" size={15} /> : <Icon name={step.icon} size={14} />}
+              </span>
+              <span className={`mt-2 text-[10px] font-bold leading-tight ${step.state === "exception" ? "text-warning" : step.state === "pending" ? "text-slate-400" : "text-slate-700"}`}>{step.title}</span>
+              <span className="mt-1 max-w-[90px] text-[9px] leading-snug text-slate-400">{step.date}</span>
+            </div>
+          </div>)}
+        </div>
+      </div>;
+    }
+
+    function App() {
+      const [records, setRecords] = useState([]);
+      const [kpis, setKpis] = useState(null);
+      const [loading, setLoading] = useState(true);
+      const [error, setError] = useState("");
+      const [role, setRole] = useState("AP_CLERK");
+      const [filters, setFilters] = useState({ status: "", type: "", risk_band: "", search: "" });
+      const [selectedId, setSelectedId] = useState(null);
+      const [detail, setDetail] = useState(null);
+      const [detailLoading, setDetailLoading] = useState(false);
+      const [comment, setComment] = useState("");
+      const [attachment, setAttachment] = useState("");
+      const [actionError, setActionError] = useState("");
+      const [actionLoading, setActionLoading] = useState(false);
+      const [ai, setAi] = useState(null);
+      const [aiLoading, setAiLoading] = useState(false);
+
+      const reload = useCallback(async () => {
+        setLoading(true);
+        setError("");
+        const params = new URLSearchParams();
+        Object.entries(filters).forEach(([key, value]) => { if (value) params.set(key, value); });
+        try {
+          const [listResponse, kpiResponse] = await Promise.all([
+            fetch(`/api/exceptions?${params.toString()}`),
+            fetch("/api/kpis")
+          ]);
+          if (!listResponse.ok || !kpiResponse.ok) throw new Error("Unable to load the invoice exception worklist.");
+          const list = await listResponse.json();
+          const metrics = await kpiResponse.json();
+          setRecords(list);
+          setKpis(metrics);
+        } catch (loadError) {
+          setError(loadError.message);
+        } finally {
+          setLoading(false);
+        }
+      }, [filters]);
+
+      useEffect(() => { reload(); }, [reload]);
+
+      const visibleRecords = useMemo(() => role === "AP_CLERK"
+        ? records.filter((record) => record.status === "Open" || record.status === "InReview")
+        : records, [records, role]);
+
+      const loadDetail = useCallback(async (id) => {
+        setSelectedId(id);
+        setDetail(null);
+        setComment("");
+        setAttachment("");
+        setActionError("");
+        setAi(null);
+        setDetailLoading(true);
+        try {
+          const response = await fetch(`/api/exceptions/${id}`);
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || "Unable to load exception details.");
+          setDetail(data);
+        } catch (loadError) {
+          setActionError(loadError.message);
+        } finally {
+          setDetailLoading(false);
+        }
+      }, []);
+
+      const closeDetail = () => {
+        setSelectedId(null);
+        setDetail(null);
+        setAi(null);
+        setActionError("");
+      };
+
+      const summarise = async () => {
+        if (!detail) return;
+        setAiLoading(true);
+        setAi(null);
+        try {
+          const response = await fetch("/api/summarise", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ exceptionId: detail.id })
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || "AI summary is unavailable.");
+          setAi(data);
+        } catch (summaryError) {
+          setAi({
+            fallback: true,
+            summary: "The AI summary service is temporarily unavailable. Review the exception data and supporting SAP documents manually.",
+            rootCauseIndicator: "Automated root-cause analysis could not be completed.",
+            recommendedAction: "Compare the invoice with its PO and goods receipt, then document the verified next step.",
+            confidence: 0,
+            fieldsUsed: []
+          });
+        } finally {
+          setAiLoading(false);
+        }
+      };
+
+      const submitAction = async (action, status) => {
+        if (!detail) return;
+        setActionError("");
+        if (!comment.trim()) {
+          setActionError("A comment is required before this action can be taken");
+          return;
+        }
+        if (!/^[A-Z]{2}-\d{6}$/.test(detail.document_id) || !(Number(detail.amount) > 0)) {
+          setActionError("Document ID must match XX-000000 and amount must be a positive number.");
+          return;
+        }
+        if (action === "Resolve" && detail.status === "Escalated" && role !== "AP_MANAGER") {
+          setActionError("This action requires AP Manager permission");
+          return;
+        }
+        setActionLoading(true);
+        try {
+          const response = await fetch(`/api/exceptions/${detail.id}`, {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              status,
+              action,
+              owner: detail.owner,
+              comment: comment.trim(),
+              attachment: attachment.trim(),
+              performed_by: role
+            })
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || "Unable to update this exception.");
+          setDetail(data);
+          setComment("");
+          setAttachment("");
+          setActionError("");
+          await reload();
+        } catch (saveError) {
+          setActionError(saveError.message);
+        } finally {
+          setActionLoading(false);
+        }
+      };
+
+      const commentMissing = !comment.trim();
+      const invalidRecord = detail && (!/^[A-Z]{2}-\d{6}$/.test(detail.document_id) || !(Number(detail.amount) > 0));
+      const managerRequired = detail && detail.status === "Escalated" && role !== "AP_MANAGER";
+      const displayRows = visibleRecords;
+
+      return <div className="min-h-screen">
+        <header className="sticky top-0 z-30 bg-shell text-white shadow-lg shadow-slate-900/10">
+          <div className="mx-auto flex h-[68px] max-w-[1600px] items-center justify-between px-5 md:px-8">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 text-white">
+                <span className="display-font text-lg font-extrabold tracking-[-.08em]">H<span className="text-[#8BC4FF]">&amp;</span>P</span>
+              </div>
+              <div className="border-l border-white/15 pl-3">
+                <p className="display-font text-[14px] font-bold tracking-wide">Harbour &amp; Pine</p>
+                <p className="mt-0.5 text-[10px] font-medium tracking-[.14em] text-slate-300">PROCURE TO PAY <span className="mx-1 text-slate-500">/</span> INVOICE EXCEPTIONS</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="hidden text-right sm:block">
+                <p className="text-[10px] font-semibold uppercase tracking-[.12em] text-slate-400">Working as</p>
+                <p className="mt-0.5 text-xs font-semibold text-white">{role === "AP_MANAGER" ? "Accounts Payable Manager" : "Accounts Payable Clerk"}</p>
+              </div>
+              <div className="flex rounded-lg border border-white/15 bg-white/5 p-1">
+                {["AP_CLERK", "AP_MANAGER"].map((item) => <button key={item} onClick={() => setRole(item)} className={`rounded-md px-3 py-1.5 text-[10px] font-bold tracking-wide transition ${role === item ? "bg-white text-shell shadow-sm" : "text-slate-300 hover:bg-white/10 hover:text-white"}`}>
+                  {item}
+                </button>)}
+              </div>
+              <div className="hidden h-8 w-8 items-center justify-center rounded-full bg-[#d9ecff] text-[11px] font-bold text-shell md:flex">HP</div>
+            </div>
+          </div>
+        </header>
+
+        <main className="mx-auto max-w-[1600px] px-5 pb-12 pt-7 md:px-8 md:pt-9">
+          <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[.13em] text-slate-500">
+                <span>Finance operations</span><Icon name="chevron" size={12} /><span className="text-primary">Exception resolution</span>
+              </div>
+              <h1 className="display-font text-[25px] font-extrabold tracking-tight text-shell md:text-[30px]">Supplier invoice exceptions</h1>
+              <p className="mt-1.5 text-sm text-slate-500">Resolve payment blockers and keep supplier invoices moving.</p>
+            </div>
+            <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-500 shadow-sm">
+              <span className="h-2 w-2 rounded-full bg-success" />
+              SAP S/4HANA <span className="mx-1 text-slate-300">|</span> UK Operations
+            </div>
+          </div>
+
+          <section aria-label="Key performance indicators" className="mb-7 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+            <KpiCard label="Exception count" value={kpis ? kpis.exceptionCount : "—"} detail="Active payment blockers" icon="stack" tone="blue" />
+            <KpiCard label="Overdue value" value={kpis ? money(kpis.overdueValue, true) : "—"} detail="Open invoices past SLA" icon="pound" tone="red" />
+            <KpiCard label="Avg resolution" value={kpis ? `${kpis.avgResolutionDays}d` : "—"} detail="Invoice to resolution" icon="clock" tone="orange" />
+            <KpiCard label="First-pass yield" value={kpis ? `${kpis.firstPassYield}%` : "—"} detail="Resolved without rework" icon="target" tone="green" />
+            <KpiCard label="SLA adherence" value={kpis ? `${kpis.slaAdherence}%` : "—"} detail="Within 5-day SLA" icon="shield" tone="teal" />
+            <KpiCard label="Recurrence rate" value={kpis ? `${kpis.recurrenceRate}%` : "—"} detail="Repeat supplier exceptions" icon="repeat" tone="slate" />
+          </section>
+
+          <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-4 md:px-5">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="display-font text-[15px] font-bold text-shell">Exception worklist</h2>
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500">{displayRows.length}</span>
+                </div>
+                <p className="mt-1 text-[11px] text-slate-500">{role === "AP_CLERK" ? "Showing Open and In Review items assigned to the clerk queue." : "All statuses · sorted by highest risk first."}</p>
+              </div>
+              <button onClick={reload} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-[11px] font-semibold text-slate-600 hover:border-primary/40 hover:text-primary">
+                <span className={loading ? "animate-spin" : ""}>↻</span> Refresh
+              </button>
+            </div>
+            <div className="grid gap-2 border-b border-slate-100 bg-slate-50/70 p-3 md:grid-cols-[minmax(220px,1fr)_170px_190px_150px] md:px-5">
+              <label className="relative">
+                <span className="sr-only">Search worklist</span>
+                <Icon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value })} placeholder="Search doc, supplier or material" className="h-9 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-xs outline-none placeholder:text-slate-400 focus:border-primary focus:ring-2 focus:ring-primary/10" />
+              </label>
+              <select aria-label="Filter by status" value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })} className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-600 outline-none focus:border-primary">
+                <option value="">All statuses</option><option value="Open">Open</option><option value="InReview">In review</option><option value="Escalated">Escalated</option><option value="Resolved">Resolved</option>
+              </select>
+              <select aria-label="Filter by exception type" value={filters.type} onChange={(event) => setFilters({ ...filters, type: event.target.value })} className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-600 outline-none focus:border-primary">
+                <option value="">All exception types</option>{TYPES.map((type) => <option key={type} value={type}>{typeNames[type]}</option>)}
+              </select>
+              <select aria-label="Filter by risk" value={filters.risk_band} onChange={(event) => setFilters({ ...filters, risk_band: event.target.value })} className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-600 outline-none focus:border-primary">
+                <option value="">All risk levels</option><option>Critical</option><option>High</option><option>Medium</option><option>Low</option>
+              </select>
+            </div>
+            {error && <div className="m-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-xs font-medium text-critical">{error}</div>}
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1050px] border-collapse text-left">
+                <thead className="bg-white">
+                  <tr className="border-b border-slate-200 text-[9px] font-bold uppercase tracking-[.11em] text-slate-400">
+                    <th className="px-4 py-3.5 md:px-5">Document</th>
+                    <th className="px-3 py-3.5">Supplier</th>
+                    <th className="px-3 py-3.5">Material</th>
+                    <th className="px-3 py-3.5 text-right">Amount</th>
+                    <th className="px-3 py-3.5">Exception type</th>
+                    <th className="px-3 py-3.5">Aging</th>
+                    <th className="px-3 py-3.5">Risk</th>
+                    <th className="px-3 py-3.5">SLA</th>
+                    <th className="px-3 py-3.5">Owner</th>
+                    <th className="px-3 py-3.5">Status</th>
+                    <th className="px-4 py-3.5 text-right md:px-5">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {loading && <tr><td colSpan="11" className="px-5 py-16 text-center text-xs text-slate-400"><span className="spinner mr-2 inline-block h-4 w-4 rounded-full align-middle" />Loading exception worklist…</td></tr>}
+                  {!loading && displayRows.map((record) => <tr key={record.id} className="table-row transition-colors">
+                    <td className="px-4 py-3.5 md:px-5">
+                      <div className="font-bold text-primary">{record.document_id}</div>
+                      <div className="mt-1 text-[10px] text-slate-400">{dateLabel(record.invoice_date)}</div>
+                    </td>
+                    <td className="max-w-[175px] px-3 py-3.5"><span className="block truncate text-xs font-semibold text-slate-700">{record.business_partner}</span><span className="mt-1 block text-[10px] text-slate-400">Co. {record.company_code} · Plant {record.plant}</span></td>
+                    <td className="max-w-[155px] px-3 py-3.5"><span className="block truncate text-xs font-semibold text-slate-700">{record.material}</span><span className="mt-1 block truncate text-[10px] text-slate-400">{record.material_desc}</span></td>
+                    <td className="px-3 py-3.5 text-right text-xs font-bold tabular-nums text-slate-700">{money(record.amount)}</td>
+                    <td className="px-3 py-3.5"><span className="text-[11px] font-medium text-slate-600">{typeNames[record.exception_type]}</span></td>
+                    <td className="px-3 py-3.5"><span className={`rounded-md px-2 py-1 text-[10px] font-bold ${record.aging_days > 30 ? "bg-red-50 text-critical" : record.aging_days > 14 ? "bg-orange-50 text-warning" : "bg-slate-100 text-slate-600"}`}>{record.aging_days}d</span></td>
+                    <td className="px-3 py-3.5"><RiskPill record={record} /></td>
+                    <td className="px-3 py-3.5"><span className={`inline-flex items-center gap-1 text-[10px] font-semibold ${record.sla_breached && record.status !== "Resolved" ? "text-critical" : "text-success"}`}><span className={`h-1.5 w-1.5 rounded-full ${record.sla_breached && record.status !== "Resolved" ? "bg-critical" : "bg-success"}`} />{record.status === "Resolved" ? "Closed" : record.sla_breached ? "Breached" : "On track"}</span></td>
+                    <td className="px-3 py-3.5 text-[10px] font-semibold text-slate-600">{record.owner}</td>
+                    <td className="px-3 py-3.5"><span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${statusStyle(record.status)}`}>{statusNames[record.status]}</span></td>
+                    <td className="px-4 py-3.5 text-right md:px-5"><button onClick={() => loadDetail(record.id)} className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-[10px] font-bold text-slate-600 transition hover:border-primary hover:text-primary">View <Icon name="chevron" size={13} /></button></td>
+                  </tr>)}
+                  {!loading && !error && displayRows.length === 0 && <tr><td colSpan="11" className="px-5 py-16">
+                    <div className="mx-auto flex max-w-xs flex-col items-center text-center">
+                      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-success"><Icon name="check" size={24} /></span>
+                      <p className="mt-3 text-sm font-bold text-slate-700">All clear</p>
+                      <p className="mt-1 text-xs leading-relaxed text-slate-500">No exceptions match these filters. The queue is in good shape.</p>
+                    </div>
+                  </td></tr>}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 bg-slate-50/60 px-4 py-3 text-[10px] text-slate-400 md:px-5">
+              <span>Risk score recalculated from age, value and exception type · SLA target: 5 calendar days</span>
+              <span>Displaying {displayRows.length} item{displayRows.length === 1 ? "" : "s"}</span>
+            </div>
+          </section>
+          <footer className="mt-5 flex flex-wrap justify-between gap-2 px-1 text-[10px] text-slate-400">
+            <span>Harbour &amp; Pine Retail · Finance Operations</span>
+            <span>Supplier invoice control desk <span className="mx-1 text-slate-300">·</span> GBP · UK</span>
+          </footer>
+        </main>
+
+        {selectedId !== null && <div className="fixed inset-0 z-40 flex justify-end">
+          <button aria-label="Close detail panel" onClick={closeDetail} className="absolute inset-0 cursor-default bg-slate-900/35 backdrop-blur-[1px]" />
+          <aside className="drawer-enter relative z-10 flex h-full w-full max-w-[660px] flex-col bg-[#F8FAFC] shadow-panel">
+            <div className="flex items-start justify-between border-b border-slate-200 bg-white px-5 py-4 md:px-7">
+              <div>
+                <div className="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[.11em] text-slate-400"><span>Exception detail</span><Icon name="chevron" size={12} /><span>{detail ? detail.document_id : "Loading"}</span></div>
+                {detail && <><h2 className="display-font text-lg font-extrabold tracking-tight text-shell">{detail.business_partner}</h2><p className="mt-1 text-xs text-slate-500">{detail.document_id} <span className="mx-1.5 text-slate-300">·</span>{detail.material_desc}</p></>}
+              </div>
+              <button onClick={closeDetail} aria-label="Close detail" className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-shell"><Icon name="close" size={16} /></button>
+            </div>
+            {detailLoading && <div className="flex flex-1 items-center justify-center text-xs text-slate-500"><span className="spinner mr-2 inline-block h-4 w-4 rounded-full" />Loading exception…</div>}
+            {!detailLoading && detail && <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4 md:px-6">
+              {actionError && <div className="flex gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-critical"><Icon name="alert" size={15} className="mt-0.5 shrink-0" /><span>{actionError}</span></div>}
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div><p className="text-[10px] font-bold uppercase tracking-[.1em] text-slate-400">Invoice amount</p><p className="display-font mt-1 text-[26px] font-extrabold tracking-tight text-shell">{money(detail.amount)}</p><p className="mt-1 text-[11px] text-slate-500">{typeNames[detail.exception_type]} <span className="mx-1 text-slate-300">·</span> {statusNames[detail.status]}</p></div>
+                  <div className="flex flex-col items-end gap-2"><RiskPill record={detail} large /><span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${detail.aging_days > 30 ? "bg-red-50 text-critical" : detail.aging_days > 14 ? "bg-orange-50 text-warning" : "bg-slate-100 text-slate-600"}`}>{detail.aging_days} days aging</span></div>
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-slate-100 pt-3 sm:grid-cols-4">
+                  {[["Company code", detail.company_code], ["Plant", detail.plant], ["Storage location", detail.storage_location], ["Cost centre", detail.cost_centre], ["Invoice date", dateLabel(detail.invoice_date)], ["Requested date", dateLabel(detail.requested_date)], ["SLA deadline", dateLabel(detail.sla_deadline)], ["Material", detail.material]].map(([label, value]) => <div key={label}><p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">{label}</p><p className="mt-1 truncate text-[11px] font-semibold text-slate-700">{value}</p></div>)}
+                </div>
+              </div>
+
+              <Timeline record={detail} />
+
+              <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3">
+                <div><p className="text-xs font-bold text-slate-700">SAP transactions</p><p className="mt-1 text-[10px] text-slate-400">Live SAP actions are disabled in this prototype</p></div>
+                <div className="flex gap-1.5">{["ME2IN", "MIGO", "MIRO"].map((sap) => <button disabled key={sap} className="cursor-not-allowed rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-[9px] font-bold text-slate-400">{sap}</button>)}</div>
+              </div>
+
+              <section className="overflow-hidden rounded-xl border border-blue-200 bg-white">
+                <div className="flex items-center justify-between border-b border-blue-100 bg-blue-50/70 px-4 py-3">
+                  <div className="flex items-center gap-2"><span className="flex h-7 w-7 items-center justify-center rounded-lg bg-white text-primary shadow-sm"><Icon name="spark" size={15} /></span><div><h3 className="text-xs font-bold text-shell">AI exception summary</h3><p className="text-[9px] text-slate-500">Server-side analysis · review before action</p></div></div>
+                  <button onClick={summarise} disabled={aiLoading} className="rounded-md bg-primary px-3 py-1.5 text-[10px] font-bold text-white transition hover:bg-blue-700 disabled:opacity-60">{ai ? "Refresh summary" : "Summarise"}</button>
+                </div>
+                <div className="p-4">
+                  {aiLoading && <div className="flex items-center gap-2 py-2 text-xs text-slate-500"><span className="spinner inline-block h-4 w-4 rounded-full" />Reviewing available invoice signals…</div>}
+                  {!aiLoading && !ai && <p className="py-1 text-[11px] leading-relaxed text-slate-500">Generate a concise root-cause indicator and recommended next step for this exception.</p>}
+                  {!aiLoading && ai && <div>
+                    {ai.fallback && <p className="mb-3 rounded-md bg-amber-50 px-2.5 py-2 text-[10px] font-medium text-warning">AI service unavailable; showing a safe rule-based summary.</p>}
+                    <p className="text-xs leading-relaxed text-slate-700">{ai.summary}</p>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      <div className="rounded-lg bg-slate-50 p-2.5"><p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Root cause indicator</p><p className="mt-1 text-[10px] leading-relaxed text-slate-700">{ai.rootCauseIndicator}</p></div>
+                      <div className="rounded-lg bg-slate-50 p-2.5"><p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Recommended action</p><p className="mt-1 text-[10px] leading-relaxed text-slate-700">{ai.recommendedAction}</p></div>
+                    </div>
+                    <div className="mt-2 flex flex-wrap justify-between gap-2 text-[9px] text-slate-400"><span>Confidence {Math.round((ai.confidence || 0) * 100)}%</span><span>Fields used: {ai.fieldsUsed && ai.fieldsUsed.length ? ai.fieldsUsed.join(", ") : "none"}</span></div>
+                  </div>}
+                </div>
+              </section>
+
+              <section className="rounded-xl border border-slate-200 bg-white p-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <div><h3 className="text-sm font-bold text-slate-800">Resolution</h3><p className="mt-0.5 text-[10px] text-slate-500">Add a note and choose the next workflow step.</p></div>
+                  <span className={`rounded-full px-2.5 py-1 text-[9px] font-bold ${statusStyle(detail.status)}`}>{statusNames[detail.status]}</span>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="text-[10px] font-bold text-slate-500">Assign owner
+                    <select value={detail.owner} onChange={(event) => setDetail({ ...detail, owner: event.target.value })} className="mt-1.5 h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-700 outline-none focus:border-primary">
+                      {["AP_CLERK", "AP_MANAGER", "AP_SPECIALIST", "PROCUREMENT"].map((owner) => <option key={owner}>{owner}</option>)}
+                    </select>
+                  </label>
+                  <label className="text-[10px] font-bold text-slate-500">Attachment reference <span className="font-normal text-slate-400">(optional)</span>
+                    <input value={attachment} onChange={(event) => setAttachment(event.target.value)} placeholder="File name or reference" className="mt-1.5 h-9 w-full rounded-lg border border-slate-200 px-2.5 text-xs font-medium text-slate-700 outline-none placeholder:text-slate-400 focus:border-primary" />
+                  </label>
+                </div>
+                <label className="mt-3 block text-[10px] font-bold text-slate-500">Resolution comment <span className="text-critical">*</span>
+                  <textarea value={comment} onChange={(event) => setComment(event.target.value)} rows="3" placeholder="Describe the check performed or action requested…" className="mt-1.5 w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-xs font-normal leading-relaxed text-slate-700 outline-none placeholder:text-slate-400 focus:border-primary focus:ring-2 focus:ring-primary/10" />
+                </label>
+                {commentMissing && <p className="mt-1 text-[10px] font-medium text-warning">A comment is required before this action can be taken</p>}
+                {managerRequired && <p className="mt-1 text-[10px] font-medium text-critical">This action requires AP Manager permission</p>}
+                {invalidRecord && <p className="mt-1 text-[10px] font-medium text-critical">Document ID must match XX-000000 and amount must be a positive number.</p>}
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <button onClick={() => submitAction("Mark In Review", "InReview")} disabled={actionLoading || commentMissing || invalidRecord} className="rounded-lg border border-primary/30 bg-blue-50 px-2 py-2 text-[10px] font-bold text-primary hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-45">Mark In Review</button>
+                  <button onClick={() => submitAction("Escalate", "Escalated")} disabled={actionLoading || commentMissing || invalidRecord} className="rounded-lg border border-orange-200 bg-orange-50 px-2 py-2 text-[10px] font-bold text-warning hover:bg-orange-100 disabled:cursor-not-allowed disabled:opacity-45">Escalate</button>
+                  <button onClick={() => submitAction("Request Approval", "InReview")} disabled={actionLoading || commentMissing || invalidRecord} className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-[10px] font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45">Request Approval</button>
+                  <button onClick={() => submitAction("Resolve", "Resolved")} disabled={actionLoading || commentMissing || invalidRecord || managerRequired} className="rounded-lg bg-success px-2 py-2 text-[10px] font-bold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-45">{actionLoading ? "Saving…" : "Resolve"}</button>
+                </div>
+              </section>
+
+              <section className="rounded-xl border border-slate-200 bg-white p-4">
+                <div className="mb-3 flex items-center justify-between"><h3 className="text-sm font-bold text-slate-800">Audit log</h3><span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-bold text-slate-500">{detail.resolution_log.length} entries</span></div>
+                {detail.resolution_log.length === 0 && <p className="rounded-lg bg-slate-50 px-3 py-4 text-center text-[10px] text-slate-400">No resolution actions recorded yet.</p>}
+                <div className="space-y-3">
+                  {detail.resolution_log.map((entry) => <div key={entry.id} className="relative border-l border-slate-200 pl-3.5">
+                    <span className="absolute -left-[4px] top-1 h-1.5 w-1.5 rounded-full bg-primary ring-2 ring-white" />
+                    <div className="flex flex-wrap items-center justify-between gap-1"><p className="text-[11px] font-bold text-slate-700">{entry.action}</p><time className="text-[9px] text-slate-400">{new Date(entry.timestamp).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}</time></div>
+                    <p className="mt-0.5 text-[9px] font-semibold text-primary">{entry.performed_by}</p>
+                    <p className="mt-1 whitespace-pre-line text-[10px] leading-relaxed text-slate-500">{entry.comment}</p>
+                  </div>)}
+                </div>
+              </section>
+            </div>}
+          </aside>
+        </div>}
+      </div>;
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
